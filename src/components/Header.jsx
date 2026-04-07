@@ -1,4 +1,4 @@
-export default function Header({ tournamentInfo, lastUpdate, isLoading, error, onAdminClick }) {
+export default function Header({ tournamentInfo, lastUpdate, isLoading, error, onAdminClick, lightMode, onToggleLight }) {
   const timeStr = lastUpdate
     ? lastUpdate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : '--';
@@ -51,15 +51,25 @@ export default function Header({ tournamentInfo, lastUpdate, isLoading, error, o
         </div>
       </div>
 
-      {/* Admin button — subtle but tappable */}
-      <button
-        onClick={onAdminClick}
-        className="absolute top-3 right-3 text-text-secondary/30 hover:text-gold/70 transition-colors text-lg"
-        aria-label="Admin"
-        title="Admin"
-      >
-        ⚙
-      </button>
+      {/* Top-right controls */}
+      <div className="absolute top-3 right-3 flex items-center gap-2">
+        <button
+          onClick={onToggleLight}
+          className="text-text-secondary/40 hover:text-gold/70 transition-colors text-sm"
+          aria-label="Toggle light mode"
+          title={lightMode ? 'Dark mode' : 'Light mode'}
+        >
+          {lightMode ? '🌙' : '☀️'}
+        </button>
+        <button
+          onClick={onAdminClick}
+          className="text-text-secondary/30 hover:text-gold/70 transition-colors text-lg"
+          aria-label="Admin"
+          title="Admin"
+        >
+          ⚙
+        </button>
+      </div>
     </header>
   );
 }

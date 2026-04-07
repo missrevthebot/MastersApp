@@ -35,3 +35,29 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+
+/* Light mode: Augusta green & gold backgrounds */
+.light {
+  --color-bg: #f4f1e8;
+  --color-bg-card: #ffffff;
+  --color-bg-card-hover: #f0eddf;
+  --color-bg-input: #f9f7f0;
+  --color-text-primary: #1a2e23;
+  --color-text-secondary: #4a6b58;
+  --color-augusta: #006747;
+  --color-augusta-dark: #004d35;
+  --color-augusta-light: #008f5f;
+  --color-gold: #b8860b;
+  --color-gold-dim: #8b6508;
+  --color-mc-red: #dc2626;
+  --color-wd-orange: #ea580c;
+  --color-active-blue: #0891b2;
+}
+
+.light body,
+body.light {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.light ::-webkit-scrollbar-track { background: var(--color-bg); }

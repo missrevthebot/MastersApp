@@ -14,18 +14,29 @@ export default function App() {
   const { oddsData } = useOdds();
   const [showAdmin, setShowAdmin] = useState(false);
   const [tab, setTab] = useState('pool'); // 'pool' | 'tournament'
+  const [lightMode, setLightMode] = useState(() => localStorage.getItem('masters-light-mode') === 'true');
+
+  function toggleLight() {
+    setLightMode(prev => {
+      const next = !prev;
+      localStorage.setItem('masters-light-mode', String(next));
+      return next;
+    });
+  }
 
   const { scored, mcPenalty } = scoreAndRank(entries, golferData);
   const winProbabilities = calcWinProbabilities(scored, oddsData);
 
   return (
-    <div className="min-h-screen bg-bg">
+    <div className={`min-h-screen bg-bg ${lightMode ? 'light' : ''}`}>
       <Header
         tournamentInfo={tournamentInfo}
         lastUpdate={lastUpdate}
         isLoading={isLoading}
         error={error}
         onAdminClick={() => setShowAdmin(true)}
+        lightMode={lightMode}
+        onToggleLight={toggleLight}
       />
 
       {/* Tab navigation */}
