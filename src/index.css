@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@theme {
+  --color-augusta: #006747;
+  --color-augusta-dark: #004d35;
+  --color-augusta-light: #008f5f;
+  --color-gold: #FFCD00;
+  --color-gold-dim: #b8940a;
+  --color-bg: #071a12;
+  --color-bg-card: #0c2218;
+  --color-bg-card-hover: #112e22;
+  --color-bg-input: #0a1f15;
+  --color-text-primary: #eaf0ec;
+  --color-text-secondary: #7fa393;
+  --color-mc-red: #ef4444;
+  --color-wd-orange: #f97316;
+  --color-active-blue: #22d3ee;
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-bg); }
+::-webkit-scrollbar-thumb { background: var(--color-augusta); border-radius: 3px; }
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
