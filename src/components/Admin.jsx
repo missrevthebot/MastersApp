@@ -206,14 +206,22 @@ export default function Admin({ entries, golferNames, onAdd, onBulkImport, onUpd
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [easterEgg, setEasterEgg] = useState(false);
 
   function checkPin(e) {
     e.preventDefault();
+    if (pin === '1234') {
+      setEasterEgg(true);
+      setPin('');
+      return;
+    }
     if (pin === ADMIN_PIN) {
       setAuthed(true);
       setPinError(false);
+      setEasterEgg(false);
     } else {
       setPinError(true);
+      setEasterEgg(false);
       setPin('');
     }
   }
@@ -222,6 +230,14 @@ export default function Admin({ entries, golferNames, onAdd, onBulkImport, onUpd
     return (
       <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
         <div className="bg-bg-card border border-augusta/30 rounded-xl p-6 w-full max-w-xs shadow-2xl">
+          {easterEgg ? (
+            <div className="text-center py-4">
+              <p className="text-mc-red text-lg font-bold mb-2">CHEATING DETECTED</p>
+              <p className="text-mc-red text-2xl font-bold">Fuck you Pat</p>
+              <button onClick={() => { setEasterEgg(false); }} className="mt-6 text-text-secondary/50 text-xs hover:text-text-secondary transition-colors">dismiss</button>
+            </div>
+          ) : (
+          <>
           <h2 className="font-[Playfair_Display] text-lg text-gold text-center mb-4">Admin Access</h2>
           <form onSubmit={checkPin} className="space-y-3">
             <input
@@ -247,6 +263,8 @@ export default function Admin({ entries, golferNames, onAdd, onBulkImport, onUpd
               </button>
             </div>
           </form>
+          </>
+          )}
         </div>
       </div>
     );
