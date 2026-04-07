@@ -65,7 +65,7 @@ Entries are hardcoded in `src/hooks/useEntries.js` in the `DEFAULT_ENTRIES` arra
 
 ## Admin Panel
 - Tap the **gear icon** top-right of header
-- PIN: `1234` (change in `src/components/Admin.jsx` line 3)
+- PIN: `5445` (change in `src/components/Admin.jsx` line 3)
 - Can upload `.xlsx` in Book2 format (Name | Tier1 | Tier2 | ... | Tier6)
 - Can manually add/edit/delete entries
 - Admin changes are **local to that browser only**

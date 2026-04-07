@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 
-const ADMIN_PIN = '1234';
+const ADMIN_PIN = '5445';
 
 function GolferInput({ value, onChange, golferNames, placeholder }) {
   const [suggestions, setSuggestions] = useState([]);
