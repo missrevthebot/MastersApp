@@ -128,6 +128,11 @@ export function useOdds() {
   return { oddsData, oddsError, refetchOdds: () => fetchOdds(true) };
 }
 
+/** Strip diacritics: Å→A, é→e, ø→o, etc. */
+function normalize(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
 /**
  * Fuzzy match a golfer name to odds data.
  */
@@ -144,23 +149,29 @@ export function matchOdds(golferName, oddsData) {
     if (key.toLowerCase() === lower) return val;
   }
 
-  // Last name + first initial
-  const parts = cleaned.split(' ');
-  const last = parts[parts.length - 1].toLowerCase();
+  // Normalized (strip diacritics): Åberg → aberg, Hovland → hovland
+  const norm = normalize(cleaned);
   for (const [key, val] of Object.entries(oddsData)) {
-    const keyParts = key.split(' ');
-    if (keyParts[keyParts.length - 1].toLowerCase() === last) {
+    if (normalize(key) === norm) return val;
+  }
+
+  // Last name + first initial (normalized)
+  const parts = norm.split(' ');
+  const last = parts[parts.length - 1];
+  for (const [key, val] of Object.entries(oddsData)) {
+    const keyParts = normalize(key).split(' ');
+    if (keyParts[keyParts.length - 1] === last) {
       if (parts.length > 1 && keyParts.length > 1 &&
-          parts[0][0].toLowerCase() === keyParts[0][0].toLowerCase()) {
+          parts[0][0] === keyParts[0][0]) {
         return val;
       }
     }
   }
 
-  // Loose last-name-only fallback
+  // Loose last-name-only fallback (normalized)
   for (const [key, val] of Object.entries(oddsData)) {
-    const keyParts = key.split(' ');
-    if (keyParts[keyParts.length - 1].toLowerCase() === last) {
+    const keyParts = normalize(key).split(' ');
+    if (keyParts[keyParts.length - 1] === last) {
       return val;
     }
   }
