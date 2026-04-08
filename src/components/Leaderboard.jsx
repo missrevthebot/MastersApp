@@ -204,6 +204,12 @@ export default function Leaderboard({ scoredEntries, mcPenalty, oddsData, winPro
 
   return (
     <div className="space-y-2">
+      {/* Pot total */}
+      <div className="text-center mb-3">
+        <span className="text-gold font-mono font-bold text-lg">${scoredEntries.length * 10}</span>
+        <span className="text-text-secondary text-xs ml-1.5 tracking-wide uppercase">Pot</span>
+      </div>
+
       {/* Info banner */}
       <div className="text-center text-[10px] text-text-secondary mb-3 tracking-wide uppercase">
         MC Penalty: {formatScore(mcPenalty)} &nbsp;·&nbsp; Pick 6, Use Best 4 &nbsp;·&nbsp; Tap entry for details
