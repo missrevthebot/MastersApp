@@ -13,12 +13,34 @@ jobs:
         with:
           node-version: 20
       - run: npm install -g vercel
-      - name: Deploy to Vercel
+      - name: Pull Vercel config
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      - name: Build
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      - name: Deploy prebuilt
         id: deploy
         run: |
-          vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }} 2>&1 | tee deploy_output.txt
-          DEPLOY_URL=$(grep -oP 'https://[^ ]+\.vercel\.app' deploy_output.txt | head -1)
+          OUTPUT=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} 2>&1)
+          echo "$OUTPUT"
+          DEPLOY_URL=$(echo "$OUTPUT" | grep -oP 'https://[^\s]+\.vercel\.app' | tail -1)
           echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      - name: Wait for deployment
+        run: |
+          for i in $(seq 1 12); do
+            STATUS=$(vercel inspect ${{ steps.deploy.outputs.url }} --token=${{ secrets.VERCEL_TOKEN }} 2>&1 | grep -oP 'status\s+● \K\w+' || echo "unknown")
+            echo "Attempt $i: $STATUS"
+            if [ "$STATUS" = "Ready" ]; then break; fi
+            sleep 5
+          done
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
