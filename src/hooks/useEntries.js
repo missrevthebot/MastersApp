@@ -28,10 +28,10 @@ export function useEntries() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Merge: keep any admin-added entries, but ensure defaults are always present
-        const existingIds = new Set(parsed.map(e => e.id));
-        const missing = DEFAULT_ENTRIES.filter(d => !existingIds.has(d.id));
-        return [...parsed, ...missing];
+        // Always use hardcoded defaults for default IDs (so name/pick changes deploy instantly)
+        const defaultIds = new Set(DEFAULT_ENTRIES.map(d => d.id));
+        const adminAdded = parsed.filter(e => !defaultIds.has(e.id));
+        return [...DEFAULT_ENTRIES, ...adminAdded];
       }
     } catch { /* ignore */ }
     return [...DEFAULT_ENTRIES];
