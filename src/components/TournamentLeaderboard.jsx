@@ -7,6 +7,15 @@ function formatScore(score) {
   return `${score}`;
 }
 
+/** Strip diacritics + Nordic chars for name matching */
+function norm(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/ø/g, 'o').replace(/Ø/g, 'O')
+    .replace(/æ/g, 'ae').replace(/Æ/g, 'AE')
+    .replace(/ð/g, 'd').replace(/Ð/g, 'D')
+    .toLowerCase().trim();
+}
+
 export default function TournamentLeaderboard({ golferData, oddsData, entries }) {
   const [filter, setFilter] = useState('all'); // 'all' | 'picked'
 
@@ -31,13 +40,14 @@ export default function TournamentLeaderboard({ golferData, oddsData, entries })
 
   // Build a map: golfer name -> list of entry names who picked them
   function getPickerNames(golferName) {
-    const lower = golferName.toLowerCase();
-    const last = lower.split(' ').pop();
+    const golferNorm = norm(golferName);
+    const golferLast = golferNorm.split(' ').pop();
     const pickers = [];
     for (const entry of entries) {
       for (const pick of entry.picks) {
-        const cleaned = pick.replace(/\s*\(.*?\)\s*$/, '').trim().toLowerCase();
-        if (cleaned === lower || (cleaned.split(' ').pop() === last && cleaned[0] === lower[0])) {
+        const pickNorm = norm(pick.replace(/\s*\(.*?\)\s*$/, ''));
+        const pickLast = pickNorm.split(' ').pop();
+        if (pickNorm === golferNorm || (pickLast === golferLast && pickNorm[0] === golferNorm[0])) {
           pickers.push(entry.name);
           break;
         }

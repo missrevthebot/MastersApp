@@ -73,6 +73,15 @@ function parseESPN(data) {
   return { golfers, tournamentName, tournamentStatus, roundDisplay, isComplete };
 }
 
+/** Strip diacritics + Nordic chars for name matching */
+function normalize(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/ø/g, 'o').replace(/Ø/g, 'O')
+    .replace(/æ/g, 'ae').replace(/Æ/g, 'AE')
+    .replace(/ð/g, 'd').replace(/Ð/g, 'D')
+    .toLowerCase();
+}
+
 /**
  * Fuzzy match a pick name to ESPN golfer data.
  */
@@ -90,22 +99,29 @@ export function matchGolfer(pickName, golferMap) {
     if (key.toLowerCase() === lower) return { name: key, ...val };
   }
 
+  // Normalized (strip diacritics)
+  const norm = normalize(cleaned);
+  for (const [key, val] of Object.entries(golferMap)) {
+    if (normalize(key) === norm) return { name: key, ...val };
+  }
+
   // Partial match
   for (const [key, val] of Object.entries(golferMap)) {
-    if (key.toLowerCase().includes(lower) || lower.includes(key.toLowerCase())) {
+    if (normalize(key).includes(norm) || norm.includes(normalize(key))) {
       return { name: key, ...val };
     }
   }
 
-  // Last name + first initial
-  const pickParts = cleaned.split(' ');
-  const pickLast = pickParts[pickParts.length - 1].toLowerCase();
+  // Last name + first initial (normalized)
+  const pickParts = norm.split(' ');
+  const pickLast = pickParts[pickParts.length - 1];
   for (const [key, val] of Object.entries(golferMap)) {
-    const keyParts = key.split(' ');
-    const keyLast = keyParts[keyParts.length - 1].toLowerCase();
+    const keyNorm = normalize(key);
+    const keyParts = keyNorm.split(' ');
+    const keyLast = keyParts[keyParts.length - 1];
     if (keyLast === pickLast) {
       if (pickParts.length > 1 && keyParts.length > 1) {
-        if (pickParts[0][0].toLowerCase() === keyParts[0][0].toLowerCase()) {
+        if (pickParts[0][0] === keyParts[0][0]) {
           return { name: key, ...val };
         }
       }
