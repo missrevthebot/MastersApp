@@ -128,9 +128,15 @@ export function useOdds() {
   return { oddsData, oddsError, refetchOdds: () => fetchOdds(true) };
 }
 
-/** Strip diacritics: Å→A, é→e, ø→o, etc. */
+/** Strip diacritics: Å→A, é→e, ø→o, æ→ae, etc. */
 function normalize(str) {
-  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ø/g, 'o').replace(/Ø/g, 'O')
+    .replace(/æ/g, 'ae').replace(/Æ/g, 'AE')
+    .replace(/ð/g, 'd').replace(/Ð/g, 'D')
+    .toLowerCase();
 }
 
 /**

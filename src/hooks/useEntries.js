@@ -16,6 +16,7 @@ const DEFAULT_ENTRIES = [
   { id: 'e10', name: 'Justin Eeg', picks: ['Jon Rahm', 'Ludvig Aberg', 'Min Woo Lee', 'J.J. Spaun', 'Ben Griffin', 'Brian Harman'] },
   { id: 'e11', name: 'Patrick Crimi', picks: ['Scottie Scheffler', 'Matt Fitzpatrick', 'Russell Henley', 'Maverick McNealy', 'Harry Hall', 'Nick Taylor'] },
   { id: 'e12', name: 'Raphael Dickie', picks: ['Scottie Scheffler', 'Xander Schauffele', 'Viktor Hovland', 'Corey Conners', 'Sungjae Im', 'Wyndham Clark'] },
+  { id: 'e13', name: 'Dan Jackson', picks: ['Rory McIlroy', 'Tommy Fleetwood', 'Si Woo Kim', 'J.J. Spaun', 'Gary Woodland', 'Hao-Tong Li'] },
 ];
 
 export function useEntries() {
