@@ -65,7 +65,24 @@ function parseESPN(data) {
       const position = c.status?.position?.displayName || c.sortOrder?.toString() || '';
       const currentRound = c.status?.period || activeRound?.period || '';
 
-      golfers[fullName] = { score, status, thru, position, currentRound };
+      // Parse round-by-round hole scores
+      const rounds = [];
+      for (const rs of (c.linescores || [])) {
+        const holes = (rs?.linescores || []).map(h => ({
+          hole: h.period,
+          strokes: h.value,
+          running: h.scoreType?.displayValue || '',
+        }));
+        if (holes.length > 0) {
+          rounds.push({
+            round: rs.period || rounds.length + 1,
+            holes,
+            roundScore: rs.displayValue || '',
+          });
+        }
+      }
+
+      golfers[fullName] = { score, status, thru, position, currentRound, rounds };
 
       // Secondary last-name key for matching
       const parts = fullName.split(' ');

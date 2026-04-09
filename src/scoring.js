@@ -2,6 +2,24 @@ import { matchGolfer } from './hooks/useGolfData';
 import { matchOdds } from './hooks/useOdds';
 
 /**
+ * Projected cut line using Masters rules: top 50 + ties make the cut.
+ * Looks at all active golfers' scores, sorts them, and returns the
+ * score at position 50 (0-indexed 49). Falls back to +4 if not enough data.
+ */
+export function calcProjectedCut(golferData) {
+  const scores = [];
+  for (const [name, data] of Object.entries(golferData)) {
+    if (!name.includes(' ')) continue;
+    if (data.status === 'active') {
+      scores.push(data.score);
+    }
+  }
+  if (scores.length < 50) return 4; // not enough data yet
+  scores.sort((a, b) => a - b);
+  return scores[49]; // score at 50th place
+}
+
+/**
  * Calculate the MC penalty: worst made-cut score + 1.
  */
 export function calcMcPenalty(golferData) {
@@ -36,6 +54,7 @@ export function scoreGolfer(pickName, golferData, mcPenalty) {
       status: 'unknown',
       thru: '',
       position: '',
+      currentRound: '',
     };
   }
 
@@ -53,6 +72,7 @@ export function scoreGolfer(pickName, golferData, mcPenalty) {
     status,
     thru: match.thru || '',
     position: match.position || '',
+    currentRound: match.currentRound || '',
   };
 }
 
@@ -134,25 +154,48 @@ export function scoreAndRank(entries, golferData) {
  * - The drop-2 mechanic (best 4 of 6)
  * - MC/WD golfers (locked at penalty score, no variance)
  */
-const NUM_SIMS = 5000;
+const DEFAULT_NUM_SIMS = 25000;
 
-export function calcWinProbabilities(scoredEntries, oddsData) {
-  if (!oddsData || Object.keys(oddsData).length === 0) return {};
-  if (scoredEntries.length === 0) return {};
+export function calcWinProbabilities(scoredEntries, oddsData, golferData, numSims = DEFAULT_NUM_SIMS) {
+  const empty = { winProbabilities: {}, simDetails: {} };
+  if (!oddsData || Object.keys(oddsData).length === 0) return empty;
+  if (scoredEntries.length === 0) return empty;
 
-  // Get median implied prob for the expected score model
-  const allProbs = Object.values(oddsData).map(o => o.impliedProb).filter(p => p > 0);
-  if (allProbs.length === 0) return {};
-  allProbs.sort((a, b) => a - b);
-  const medianProb = allProbs[Math.floor(allProbs.length / 2)];
+  // MC penalty for cut/WD golfers
+  const mcPenalty = golferData ? calcMcPenalty(golferData) : 15;
+  const projCut = golferData ? calcProjectedCut(golferData) : 4;
 
-  function expectedScore(impliedProb) {
-    if (impliedProb <= 0) return 8;
-    return -4 * Math.log(impliedProb / medianProb);
+  // --- Historical Masters calibration ---
+  // Score caps from Masters history:
+  //   Best: record is -18 (Tiger '97, DJ '20). Cap at -23 (record - 5).
+  //   Worst: worst 72-hole finisher in last 20yr ~+24. Floor at +29 (+5 buffer).
+  const SCORE_CAP_LOW = -23;
+  const SCORE_CAP_HIGH = 29;
+
+  // Made-cut mean: calibrated so entry medians ~-18 to -22 (strong), ~0 (weak).
+  // Individual: favorite(12%)→-3, mid(5%)→-1.4, contender(2%)→+0.2, longshot(0.5%)→+2.7
+  // No real top-4 pool entry has ever broken -40, so that's near the ceiling.
+  function histMadeCutMean(prob) {
+    if (prob <= 0) return 3;
+    return -6.8 - 1.8 * Math.log(prob);
+  }
+  // MC probability: favorites ~6%, mid ~23%, longshots ~45%
+  function histMcProb(prob) {
+    const raw = 0.55 * (1 - Math.sqrt(Math.min(1, prob / 0.15)));
+    return Math.max(0.05, Math.min(0.55, raw));
+  }
+  // Made-cut stddev: favorites ~4.3, longshots ~5.5.
+  // With skew, individual range: Scottie ~-15 to +9, longshot ~-8 to +14.
+  // Entry medians land ~-20 (strong) to ~0 (weak).
+  function histMadeStddev(prob) {
+    return 4.0 + 1.5 * (1 - Math.min(1, prob / 0.15));
+  }
+  // Skew: negative for favorites (fatter good-score tail), positive for longshots
+  function histSkew(prob) {
+    return 0.30 * (1 - 2 * Math.min(1, prob / 0.15));
   }
 
-  // Build golfer profiles: mean + stddev for final score
-  // Keyed by golfer name so shared picks get the same random draw
+  // Build golfer profiles with mixture model: MC penalty path + made-cut path
   const golferProfiles = {};
 
   for (const entry of scoredEntries) {
@@ -160,83 +203,255 @@ export function calcWinProbabilities(scoredEntries, oddsData) {
       if (golferProfiles[g.name]) continue;
 
       if (g.status === 'cut' || g.status === 'wd') {
-        golferProfiles[g.name] = { mean: g.score, stddev: 0, locked: true };
+        golferProfiles[g.name] = {
+          madeMean: g.score, madeStddev: 0, mcProb: 0, mcScore: g.score,
+          skew: 0, locked: true,
+        };
         continue;
       }
 
       const odds = matchOdds(g.name, oddsData);
-      const projFromOdds = odds ? expectedScore(odds.impliedProb) : 4;
+      // impliedProb from odds API is a percentage (0-100); convert to fraction
+      const impliedProb = (odds?.impliedProb || 0.5) / 100;
 
-      let mean;
-      if (g.score === null) {
-        mean = projFromOdds;
-      } else {
-        mean = g.score * 0.6 + projFromOdds * 0.4;
+      // Baseline from historical calibration
+      let madeMean = histMadeCutMean(impliedProb);
+      let madeStddev = histMadeStddev(impliedProb);
+      let mcProb = histMcProb(impliedProb);
+      let skew = histSkew(impliedProb);
+
+      // Per-golfer progress
+      const thru = g.thru || '';
+      const hasPlayed = thru && thru !== '0' && thru !== '';
+      const round = parseInt(g.currentRound, 10) || 1;
+      const completedRounds = Math.max(0, round - 1);
+      const holesThisRound = hasPlayed
+        ? (thru === 'F' || thru === '18' ? 18 : (parseInt(thru, 10) || 0))
+        : 0;
+      const golferHoles = completedRounds * 18 + holesThisRound;
+      const golferProgress = Math.min(1, golferHoles / 72);
+
+      // Blend actual score into mean as tournament progresses
+      if (hasPlayed && g.score !== null && golferHoles > 0) {
+        // Project: current score + expected per-hole rate for remaining holes
+        const perHoleRate = madeMean / 72;
+        const remainingHoles = 72 - golferHoles;
+        const adjusted = g.score + perHoleRate * remainingHoles;
+        const blendW = 0.05 + 0.90 * Math.pow(golferProgress, 1.5);
+        madeMean = blendW * adjusted + (1 - blendW) * madeMean;
       }
 
-      // Stddev: favorites are more consistent, longshots more volatile
-      // Also less variance as tournament progresses (score is more locked in)
-      const baseStddev = odds ? Math.max(1.5, 4 - odds.impliedProb * 15) : 4;
-      const progressFactor = g.score !== null ? 0.7 : 1.0;
-      const stddev = baseStddev * progressFactor;
+      // Scale stddev down as holes lock in
+      madeStddev *= (1.0 - 0.85 * golferProgress);
 
-      golferProfiles[g.name] = { mean, stddev, locked: false };
+      // Adjust MC probability based on progress and score vs cut
+      if (golferProgress >= 0.5) {
+        // Past the cut — active golfers made it
+        mcProb = 0;
+      } else if (hasPlayed && g.score !== null) {
+        const overCut = g.score - projCut;
+        if (overCut >= 2) {
+          // Well above cut: MC much more likely
+          mcProb = Math.min(0.85, mcProb + 0.30 * Math.min(1, overCut / 4) * golferProgress * 4);
+        } else if (overCut >= 0) {
+          mcProb = Math.min(0.70, mcProb + 0.15 * golferProgress * 4);
+        } else if (overCut <= -4) {
+          // Well below cut: MC very unlikely
+          mcProb *= Math.max(0.1, 1 - golferProgress * 2);
+        }
+      }
+
+      // Reduce skew as more data comes in
+      skew *= (1 - golferProgress);
+
+      golferProfiles[g.name] = {
+        madeMean, madeStddev, mcProb, mcScore: mcPenalty, skew, locked: false,
+      };
     }
   }
 
-  // Run Monte Carlo simulations
-  const wins = {};
-  for (const entry of scoredEntries) wins[entry.id] = 0;
+  // --- Run Monte Carlo (typed arrays for speed) ---
+  const n = scoredEntries.length;
+  const entryIds = scoredEntries.map(e => e.id);
+  const entryGolferNames = scoredEntries.map(e => e.golfers.map(g => g.name));
 
-  // Simple seeded random for reproducibility within a render
+  // Pre-resolve profiles into typed arrays
+  const profileNames = Object.keys(golferProfiles);
+  const numProfiles = profileNames.length;
+  const pMadeMean = new Float64Array(numProfiles);
+  const pMadeStddev = new Float64Array(numProfiles);
+  const pMcProb = new Float64Array(numProfiles);
+  const pMcScore = new Float64Array(numProfiles);
+  const pSkew = new Float64Array(numProfiles);
+  const pLocked = new Uint8Array(numProfiles);
+  const pLockedScore = new Float64Array(numProfiles);
+  const nameToIdx = {};
+
+  for (let i = 0; i < numProfiles; i++) {
+    const p = golferProfiles[profileNames[i]];
+    pMadeMean[i] = p.madeMean;
+    pMadeStddev[i] = p.madeStddev;
+    pMcProb[i] = p.mcProb;
+    pMcScore[i] = p.mcScore;
+    pSkew[i] = p.skew;
+    pLocked[i] = p.locked ? 1 : 0;
+    pLockedScore[i] = p.locked ? p.madeMean : 0;
+    nameToIdx[profileNames[i]] = i;
+  }
+
+  const entryGolferIdx = entryGolferNames.map(names =>
+    names.map(name => nameToIdx[name] ?? -1)
+  );
+
+  const wins = new Float64Array(n);
+  const allTotals = new Float64Array(n * numSims);
+
   let seed = 42;
   function rand() {
     seed = (seed * 16807 + 0) % 2147483647;
     return seed / 2147483647;
   }
-  // Box-Muller for normal distribution
   function randNormal() {
     const u1 = rand();
     const u2 = rand();
     return Math.sqrt(-2 * Math.log(u1 || 0.0001)) * Math.cos(2 * Math.PI * u2);
   }
 
-  for (let sim = 0; sim < NUM_SIMS; sim++) {
-    // Draw a random final score for each unique golfer
-    const golferScores = {};
-    for (const [name, profile] of Object.entries(golferProfiles)) {
-      if (profile.locked) {
-        golferScores[name] = profile.mean;
+  const golferScores = new Float64Array(numProfiles);
+  const sixScores = new Float64Array(6);
+
+  for (let sim = 0; sim < numSims; sim++) {
+    // Draw golfer scores — mixture model with Masters-calibrated caps
+    for (let i = 0; i < numProfiles; i++) {
+      if (pLocked[i]) {
+        golferScores[i] = pLockedScore[i];
+      } else if (rand() < pMcProb[i]) {
+        // Missed cut: penalty score with slight noise, capped at historical worst
+        golferScores[i] = Math.min(SCORE_CAP_HIGH, pMcScore[i] + 1.0 * randNormal());
       } else {
-        golferScores[name] = profile.mean + profile.stddev * randNormal();
+        // Made cut: skewed normal, clamped to realistic Masters range
+        let z = randNormal();
+        const sk = pSkew[i];
+        z = z < 0 ? z * (1 - sk) : z * (1 + sk);
+        golferScores[i] = Math.max(SCORE_CAP_LOW, Math.min(SCORE_CAP_HIGH,
+          pMadeMean[i] + pMadeStddev[i] * z));
       }
     }
 
-    // Score each entry: best 4 of 6
+    // Score each entry (best 4 of 6)
     let bestTotal = Infinity;
-    const entryTotals = [];
-    for (const entry of scoredEntries) {
-      const scores = entry.golfers
-        .map(g => golferScores[g.name] ?? 10)
-        .sort((a, b) => a - b);
-      const best4 = scores.slice(0, 4).reduce((s, v) => s + v, 0);
-      entryTotals.push({ id: entry.id, total: best4 });
-      if (best4 < bestTotal) bestTotal = best4;
+    let tieCount = 1;
+    for (let e = 0; e < n; e++) {
+      const idxs = entryGolferIdx[e];
+      for (let g = 0; g < 6; g++) {
+        sixScores[g] = idxs[g] >= 0 ? golferScores[idxs[g]] : 10;
+      }
+      sixScores.sort();
+      const best4 = sixScores[0] + sixScores[1] + sixScores[2] + sixScores[3];
+      allTotals[e * numSims + sim] = best4;
+      if (best4 < bestTotal - 0.01) {
+        bestTotal = best4;
+        tieCount = 1;
+      } else if (Math.abs(best4 - bestTotal) < 0.01) {
+        tieCount++;
+      }
     }
 
-    // Count winners (handle ties: split credit)
-    const winners = entryTotals.filter(e => Math.abs(e.total - bestTotal) < 0.01);
-    const credit = 1 / winners.length;
-    for (const w of winners) wins[w.id] += credit;
+    // Credit winners
+    if (tieCount === 1) {
+      for (let e = 0; e < n; e++) {
+        if (Math.abs(allTotals[e * numSims + sim] - bestTotal) < 0.01) {
+          wins[e] += 1;
+          break;
+        }
+      }
+    } else {
+      const credit = 1 / tieCount;
+      for (let e = 0; e < n; e++) {
+        if (Math.abs(allTotals[e * numSims + sim] - bestTotal) < 0.01) {
+          wins[e] += credit;
+        }
+      }
+    }
   }
 
-  // Convert to percentages
+  // --- Build per-entry stats ---
   const result = {};
-  for (const entry of scoredEntries) {
-    result[entry.id] = parseFloat(((wins[entry.id] / NUM_SIMS) * 100).toFixed(1));
+  const details = {};
+  const sortBuf = new Float64Array(numSims);
+
+  for (let e = 0; e < n; e++) {
+    const id = entryIds[e];
+    const winPct = parseFloat(((wins[e] / numSims) * 100).toFixed(1));
+    result[id] = winPct;
+
+    const offset = e * numSims;
+    for (let i = 0; i < numSims; i++) sortBuf[i] = allTotals[offset + i];
+    sortBuf.sort();
+
+    const p25 = sortBuf[Math.floor(numSims * 0.25)];
+    const median = sortBuf[Math.floor(numSims * 0.5)];
+    const p75 = sortBuf[Math.floor(numSims * 0.75)];
+    const min = sortBuf[0];
+    const max = sortBuf[numSims - 1];
+
+    // Avg of bottom 5% (best outcomes) and top 5% (worst outcomes)
+    const tail5 = Math.max(1, Math.floor(numSims * 0.05));
+    let bestSum = 0, worstSum = 0;
+    for (let i = 0; i < tail5; i++) bestSum += sortBuf[i];
+    for (let i = numSims - tail5; i < numSims; i++) worstSum += sortBuf[i];
+    const bestCase = bestSum / tail5;
+    const worstCase = worstSum / tail5;
+
+    // Histogram
+    const range = max - min || 1;
+    const numBins = 20;
+    const bins = new Uint32Array(numBins);
+    for (let i = 0; i < numSims; i++) {
+      const bin = Math.min(numBins - 1, Math.floor(((sortBuf[i] - min) / range) * numBins));
+      bins[bin]++;
+    }
+    let maxBin = 0;
+    for (let i = 0; i < numBins; i++) if (bins[i] > maxBin) maxBin = bins[i];
+    const histogram = Array.from(bins, b => b / maxBin);
+
+    // Golfer stats — effective mean/stddev for SimDetail display
+    const golferStats = scoredEntries[e].golfers.map(g => {
+      const prof = golferProfiles[g.name];
+      if (!prof) return { name: g.name, mean: null, stddev: null, locked: false, status: g.status };
+      // Effective mean includes MC probability pulling toward penalty
+      const effMean = prof.locked ? prof.madeMean :
+        prof.mcProb * prof.mcScore + (1 - prof.mcProb) * prof.madeMean;
+      // Effective stddev from mixture variance
+      const effStddev = prof.locked ? 0 : Math.sqrt(
+        (1 - prof.mcProb) * prof.madeStddev * prof.madeStddev +
+        prof.mcProb * 1.0 +
+        prof.mcProb * (1 - prof.mcProb) * Math.pow(prof.mcScore - prof.madeMean, 2)
+      );
+      return {
+        name: g.name,
+        mean: parseFloat(effMean.toFixed(1)),
+        stddev: parseFloat(effStddev.toFixed(1)),
+        locked: prof.locked,
+        status: g.status,
+      };
+    });
+
+    details[id] = {
+      winPct,
+      median: parseFloat(median.toFixed(1)),
+      bestCase: parseFloat(bestCase.toFixed(1)),
+      worstCase: parseFloat(worstCase.toFixed(1)),
+      p25: parseFloat(p25.toFixed(1)),
+      p75: parseFloat(p75.toFixed(1)),
+      histogram,
+      histMin: parseFloat(min.toFixed(1)),
+      histMax: parseFloat(max.toFixed(1)),
+      golferStats,
+    };
   }
 
-  return result;
+  return { winProbabilities: result, simDetails: details };
 }
 
 export function formatScore(score) {

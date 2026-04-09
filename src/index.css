@@ -3,18 +3,18 @@
 @theme {
   --color-augusta: #006747;
   --color-augusta-dark: #004d35;
-  --color-augusta-light: #008f5f;
-  --color-gold: #FFCD00;
-  --color-gold-dim: #b8940a;
-  --color-bg: #071a12;
-  --color-bg-card: #0c2218;
-  --color-bg-card-hover: #112e22;
-  --color-bg-input: #0a1f15;
-  --color-text-primary: #eaf0ec;
-  --color-text-secondary: #7fa393;
-  --color-mc-red: #ef4444;
-  --color-wd-orange: #f97316;
-  --color-active-blue: #22d3ee;
+  --color-augusta-light: #00a86b;
+  --color-gold: #FFD54F;
+  --color-gold-dim: #c4981a;
+  --color-bg: #101714;
+  --color-bg-card: #1a2420;
+  --color-bg-card-hover: #222e29;
+  --color-bg-input: #151e1a;
+  --color-text-primary: #eef2ef;
+  --color-text-secondary: #8aab9a;
+  --color-mc-red: #f87171;
+  --color-wd-orange: #fb923c;
+  --color-active-blue: #4ade80;
   --font-display: 'Playfair Display', Georgia, serif;
   --font-body: 'Inter', system-ui, sans-serif;
 }
@@ -25,39 +25,40 @@ body {
   color: var(--color-text-primary);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--color-bg); }
-::-webkit-scrollbar-thumb { background: var(--color-augusta); border-radius: 3px; }
+::-webkit-scrollbar { width: 0; height: 0; }
 
 @keyframes livePulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
 
-/* Light mode: Augusta green & gold backgrounds */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sheetUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Light mode */
 .light {
-  --color-bg: #f4f1e8;
+  --color-bg: #f7f5ef;
   --color-bg-card: #ffffff;
-  --color-bg-card-hover: #f0eddf;
-  --color-bg-input: #f9f7f0;
+  --color-bg-card-hover: #f5f3eb;
+  --color-bg-input: #faf9f5;
   --color-text-primary: #1a2e23;
-  --color-text-secondary: #4a6b58;
+  --color-text-secondary: #5a7a68;
   --color-augusta: #006747;
   --color-augusta-dark: #004d35;
   --color-augusta-light: #008f5f;
-  --color-gold: #b8860b;
-  --color-gold-dim: #8b6508;
+  --color-gold: #9a7209;
+  --color-gold-dim: #7a5a08;
   --color-mc-red: #dc2626;
   --color-wd-orange: #ea580c;
-  --color-active-blue: #0891b2;
+  --color-active-blue: #059669;
 }
-
-.light body,
-body.light {
-  background: var(--color-bg);
-  color: var(--color-text-primary);
-}
-
-.light ::-webkit-scrollbar-track { background: var(--color-bg); }
