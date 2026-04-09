@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { BACKFILL_HISTORY } from '../data/backfillHistory';
 
 const HISTORY_KEY = 'masters-win-history-v3';
-const MAX_SNAPSHOTS = 1000;
+const MAX_SNAPSHOTS = 2000;
 const MIN_INTERVAL_MS = 55_000;
 
 // Clean up all old keys
@@ -15,18 +15,26 @@ try {
 } catch {}
 
 function loadHistory() {
+  // Always merge hardcoded backfill with localStorage so every device
+  // gets the full server-side history + any local-only snapshots.
+  let local = [];
   try {
     const saved = localStorage.getItem(HISTORY_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.length > 0) return parsed;
-    }
+    if (saved) local = JSON.parse(saved) || [];
   } catch {}
-  // First load: start with hardcoded backfill
+
+  // Merge: deduplicate by timestamp, sort chronologically
+  const byTime = new Map();
+  for (const s of BACKFILL_HISTORY) byTime.set(s.t, s);
+  for (const s of local) byTime.set(s.t, s); // local wins on conflict
+  const merged = [...byTime.values()].sort((a, b) => a.t - b.t).slice(-MAX_SNAPSHOTS);
+
+  // Persist merged result
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(BACKFILL_HISTORY));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(merged));
   } catch {}
-  return [...BACKFILL_HISTORY];
+
+  return merged;
 }
 
 export function useWinHistory(winProbabilities, scoredEntries) {
@@ -60,7 +68,7 @@ export function useWinHistory(winProbabilities, scoredEntries) {
       try {
         localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
       } catch {
-        const trimmed = updated.slice(-200);
+        const trimmed = updated.slice(-500);
         localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
       }
       return updated;
