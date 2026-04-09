@@ -51,9 +51,15 @@ function parseESPN(data) {
         status = 'wd';
       }
 
-      const thru = c.status?.displayValue || c.status?.thru?.toString() || '';
+      // Thru: try status first, then count hole-by-hole linescores
+      let thru = c.status?.displayValue || c.status?.thru?.toString() || '';
+      const currentRoundLinescores = c.linescores?.[c.linescores.length - 1];
+      const holesPlayed = currentRoundLinescores?.linescores?.length || 0;
+      if (!thru && holesPlayed > 0) {
+        thru = holesPlayed >= 18 ? 'F' : `${holesPlayed}`;
+      }
       const position = c.status?.position?.displayName || c.sortOrder?.toString() || '';
-      const currentRound = c.status?.period || '';
+      const currentRound = c.status?.period || currentRoundLinescores?.period || '';
 
       golfers[fullName] = { score, status, thru, position, currentRound };
 
