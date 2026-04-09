@@ -121,104 +121,119 @@ export function scoreAndRank(entries, golferData) {
 }
 
 /**
- * Convert outright win probability into an expected score contribution.
+ * Monte Carlo win probability simulation.
  *
- * The Odds API only offers outrights (winner market), not top-5/10/20 or totals.
- * But win probability is a strong proxy for expected finish position and score:
+ * For each golfer in the pool, builds a projected mean + stddev for their
+ * final score. Then runs N simulations where each golfer gets a random
+ * final score (shared across all entries that picked them). For each sim,
+ * applies best-4-of-6 scoring and tracks who wins.
  *
- *   - A golfer with 15% win prob (Scheffler) is very likely to finish top 5
- *     and post something like -12 to -16.
- *   - A golfer with 0.5% win prob is likely to finish 30th-50th, maybe -2 to +4.
- *   - A golfer with 0.1% win prob will probably be near the cut line or MC.
- *
- * We model expected score as: -4 * ln(winProb / medianProb)
- * This gives roughly:
- *   15% → about -14,  5% → about -10,  1% → about -5,  0.3% → about 0
- *
- * For the pool win probability, we:
- * 1. Estimate each golfer's expected final score from odds
- * 2. Take the best 4 expected scores per entry
- * 3. Combine with actual current score (weighted by how far into the tournament we are)
- * 4. Run a simplified Monte Carlo: estimate variance and compute P(this entry wins)
+ * This properly handles:
+ * - Overlapping picks (shared golfers move together)
+ * - Unique picks (your edge comes from golfers only you have)
+ * - The drop-2 mechanic (best 4 of 6)
+ * - MC/WD golfers (locked at penalty score, no variance)
  */
+const NUM_SIMS = 5000;
+
 export function calcWinProbabilities(scoredEntries, oddsData) {
   if (!oddsData || Object.keys(oddsData).length === 0) return {};
+  if (scoredEntries.length === 0) return {};
 
-  // Get all implied probs to find the median
+  // Get median implied prob for the expected score model
   const allProbs = Object.values(oddsData).map(o => o.impliedProb).filter(p => p > 0);
   if (allProbs.length === 0) return {};
   allProbs.sort((a, b) => a - b);
   const medianProb = allProbs[Math.floor(allProbs.length / 2)];
 
-  // Convert win% to expected score relative to par
   function expectedScore(impliedProb) {
-    if (impliedProb <= 0) return 8; // longshot → expect near MC
+    if (impliedProb <= 0) return 8;
     return -4 * Math.log(impliedProb / medianProb);
   }
 
-  const entryProjections = [];
+  // Build golfer profiles: mean + stddev for final score
+  // Keyed by golfer name so shared picks get the same random draw
+  const golferProfiles = {};
 
   for (const entry of scoredEntries) {
-    const golferProjections = entry.golfers.map(g => {
-      // MC/WD golfers are locked in at their penalty score
+    for (const g of entry.golfers) {
+      if (golferProfiles[g.name]) continue;
+
       if (g.status === 'cut' || g.status === 'wd') {
-        return { locked: true, current: g.score, projected: g.score };
+        golferProfiles[g.name] = { mean: g.score, stddev: 0, locked: true };
+        continue;
       }
 
       const odds = matchOdds(g.name, oddsData);
       const projFromOdds = odds ? expectedScore(odds.impliedProb) : 4;
-      const current = g.score;
 
-      // Blend current score with odds projection.
-      // As tournament progresses, current score matters more.
-      // Rough heuristic: weight current score by how "complete" it feels.
-      // Before tournament: 100% odds. During: blend. After cut: mostly current.
-      let projected;
-      if (current === null) {
-        projected = projFromOdds; // pre-tournament
+      let mean;
+      if (g.score === null) {
+        mean = projFromOdds;
       } else {
-        // The further the current score is locked in, the more we trust it.
-        // Use 60% current + 40% odds as a reasonable mid-tournament blend.
-        projected = current * 0.6 + projFromOdds * 0.4;
+        mean = g.score * 0.6 + projFromOdds * 0.4;
       }
 
-      return { locked: false, current, projected };
-    });
+      // Stddev: favorites are more consistent, longshots more volatile
+      // Also less variance as tournament progresses (score is more locked in)
+      const baseStddev = odds ? Math.max(1.5, 4 - odds.impliedProb * 15) : 4;
+      const progressFactor = g.score !== null ? 0.7 : 1.0;
+      const stddev = baseStddev * progressFactor;
 
-    // Best 4 projected scores (lowest)
-    const projScores = golferProjections.map(g => g.projected).sort((a, b) => a - b);
-    const best4Proj = projScores.slice(0, 4).reduce((s, v) => s + v, 0);
-
-    // Uncertainty: entries with more "unlocked" golfers have more variance
-    const unlockedCount = golferProjections.filter(g => !g.locked).length;
-    const uncertainty = Math.max(1, unlockedCount * 1.5); // std dev in strokes
-
-    entryProjections.push({
-      id: entry.id,
-      projectedTotal: best4Proj,
-      uncertainty,
-    });
+      golferProfiles[g.name] = { mean, stddev, locked: false };
+    }
   }
 
-  // Find the entry with the best (lowest) projected total
-  const bestProj = Math.min(...entryProjections.map(e => e.projectedTotal));
+  // Run Monte Carlo simulations
+  const wins = {};
+  for (const entry of scoredEntries) wins[entry.id] = 0;
 
-  // For each entry, estimate probability of winning:
-  // P(win) ≈ based on how likely they are to end up with the lowest total
-  // Use a logistic/softmax-style approach: exp(-diff/uncertainty)
-  const rawProbs = entryProjections.map(e => {
-    const diff = e.projectedTotal - bestProj;
-    // Temperature controls how quickly probability drops with strokes behind
-    const temperature = Math.max(1.5, e.uncertainty);
-    return { id: e.id, raw: Math.exp(-diff / temperature) };
-  });
+  // Simple seeded random for reproducibility within a render
+  let seed = 42;
+  function rand() {
+    seed = (seed * 16807 + 0) % 2147483647;
+    return seed / 2147483647;
+  }
+  // Box-Muller for normal distribution
+  function randNormal() {
+    const u1 = rand();
+    const u2 = rand();
+    return Math.sqrt(-2 * Math.log(u1 || 0.0001)) * Math.cos(2 * Math.PI * u2);
+  }
 
-  const totalRaw = rawProbs.reduce((s, e) => s + e.raw, 0);
-  if (totalRaw === 0) return {};
+  for (let sim = 0; sim < NUM_SIMS; sim++) {
+    // Draw a random final score for each unique golfer
+    const golferScores = {};
+    for (const [name, profile] of Object.entries(golferProfiles)) {
+      if (profile.locked) {
+        golferScores[name] = profile.mean;
+      } else {
+        golferScores[name] = profile.mean + profile.stddev * randNormal();
+      }
+    }
 
+    // Score each entry: best 4 of 6
+    let bestTotal = Infinity;
+    const entryTotals = [];
+    for (const entry of scoredEntries) {
+      const scores = entry.golfers
+        .map(g => golferScores[g.name] ?? 10)
+        .sort((a, b) => a - b);
+      const best4 = scores.slice(0, 4).reduce((s, v) => s + v, 0);
+      entryTotals.push({ id: entry.id, total: best4 });
+      if (best4 < bestTotal) bestTotal = best4;
+    }
+
+    // Count winners (handle ties: split credit)
+    const winners = entryTotals.filter(e => Math.abs(e.total - bestTotal) < 0.01);
+    const credit = 1 / winners.length;
+    for (const w of winners) wins[w.id] += credit;
+  }
+
+  // Convert to percentages
   const result = {};
-  for (const e of rawProbs) {
-    result[e.id] = parseFloat(((e.raw / totalRaw) * 100).toFixed(1));
+  for (const entry of scoredEntries) {
+    result[entry.id] = parseFloat(((wins[entry.id] / NUM_SIMS) * 100).toFixed(1));
   }
 
   return result;
