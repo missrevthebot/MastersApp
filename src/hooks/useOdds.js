@@ -5,26 +5,26 @@ const API_KEY = 'c38b243a9594e20d3a10f5a42481a489';
 const ODDS_CACHE_KEY = 'masters-odds-cache';
 const ODDS_TIMESTAMP_KEY = 'masters-odds-last-fetch';
 
-// Only fetch 7am–10pm CST, hourly. Tournament runs Thu 4/10 – Sun 4/13.
-// Budget: ~16 fetches/day * 4 days = ~64 requests. Well within 500.
-const HOUR_MS = 3_600_000;
+// Fetch every 15 min during live play (8am-7:30pm CST), once 30 min after rounds end.
+// Budget: 44/day × 4 days + 4 post-round = ~180 requests. Well within 500.
+const FETCH_INTERVAL_MS = 15 * 60_000; // 15 minutes
 const CHECK_INTERVAL = 60_000; // Check every minute if it's time to fetch
 
 /**
  * Should we fetch right now?
- * - Only between 7am and 10pm CST (UTC-5 during CDT / UTC-6 during CST — April is CDT so UTC-5)
- * - Only if last fetch was >1 hour ago
+ * - Only between 8am and 8pm CST (covers live play + 30min post-round buffer)
+ * - Only if last fetch was >15 min ago
  */
 function shouldFetchNow() {
   const now = new Date();
   // Convert to CST/CDT: April is CDT = UTC-5
   const cstHour = (now.getUTCHours() - 5 + 24) % 24;
-  if (cstHour < 7 || cstHour >= 22) return false;
+  if (cstHour < 8 || cstHour >= 20) return false;
 
   const lastFetch = localStorage.getItem(ODDS_TIMESTAMP_KEY);
   if (lastFetch) {
     const elapsed = now.getTime() - parseInt(lastFetch, 10);
-    if (elapsed < HOUR_MS) return false;
+    if (elapsed < FETCH_INTERVAL_MS) return false;
   }
 
   return true;
