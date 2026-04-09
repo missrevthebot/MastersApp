@@ -22,6 +22,13 @@ const RANGES = [
   { key: 'round', label: 'Round' },
 ];
 
+const Y_SCALES = [
+  { key: '100', label: '0-100%', yMax: 100 },
+  { key: '50', label: '0-50%', yMax: 50 },
+  { key: '25', label: '0-25%', yMax: 25 },
+  { key: 'auto', label: 'Auto', yMax: null },
+];
+
 function formatTime(ts) {
   const d = new Date(ts);
   const h = d.getHours();
@@ -85,6 +92,7 @@ function smoothPath(points, xFn, yFn) {
 export default function WinHistoryChart({ history, scoredEntries, onClose }) {
   const [hiddenEntries, setHiddenEntries] = useState(() => new Set());
   const [activeRange, setActiveRange] = useState('all');
+  const [yScaleKey, setYScaleKey] = useState('100');
   const [viewBox, setViewBox] = useState(null); // null = auto from range
   const svgRef = useRef(null);
   const gestureRef = useRef({
@@ -168,11 +176,23 @@ export default function WinHistoryChart({ history, scoredEntries, onClose }) {
     }
   }, [activeRange, fullTimeRange]);
 
+  // Compute auto Y-max from visible data
+  const autoYMax = useMemo(() => {
+    let visMax = 0;
+    for (const entry of entries) {
+      if (hiddenEntries.has(entry.id)) continue;
+      for (const p of entry.points) visMax = Math.max(visMax, p.pct);
+    }
+    return Math.max(10, Math.ceil(visMax / 5) * 5 + 5);
+  }, [entries, hiddenEntries]);
+
   // Effective viewBox
   const effectiveView = useMemo(() => {
     if (viewBox) return viewBox;
-    return { xMin: rangeTimeBounds[0], xMax: rangeTimeBounds[1], yMin: 0, yMax: 100 };
-  }, [viewBox, rangeTimeBounds]);
+    const ySetting = Y_SCALES.find(s => s.key === yScaleKey);
+    const yMax = ySetting?.yMax ?? autoYMax;
+    return { xMin: rangeTimeBounds[0], xMax: rangeTimeBounds[1], yMin: 0, yMax };
+  }, [viewBox, rangeTimeBounds, yScaleKey, autoYMax]);
 
   // Reset viewBox when range changes
   const handleRangeChange = useCallback((key) => {
@@ -184,6 +204,7 @@ export default function WinHistoryChart({ history, scoredEntries, onClose }) {
   const handleDoubleReset = useCallback(() => {
     setViewBox(null);
     setActiveRange('all');
+    setYScaleKey('100');
   }, []);
 
   // Toggle entry visibility
@@ -199,7 +220,7 @@ export default function WinHistoryChart({ history, scoredEntries, onClose }) {
   // SVG layout constants
   const W = 1000;
   const H = 600;
-  const PAD = { top: 30, right: 90, bottom: 36, left: 48 };
+  const PAD = { top: 30, right: 110, bottom: 36, left: 48 };
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
 
@@ -490,20 +511,38 @@ export default function WinHistoryChart({ history, scoredEntries, onClose }) {
         </div>
 
         {/* Range pills */}
-        <div className="px-5 pb-2 flex gap-1.5 flex-shrink-0">
-          {RANGES.map(r => (
-            <button
-              key={r.key}
-              onClick={() => handleRangeChange(r.key)}
-              className={`px-3 py-1 rounded-full text-[10px] font-medium tracking-wide transition-all ${
-                activeRange === r.key
-                  ? 'bg-augusta/20 text-augusta-light'
-                  : 'bg-white/5 text-text-secondary/40 hover:bg-white/8 hover:text-text-secondary/60'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="px-5 pb-1.5 flex items-center gap-4 flex-shrink-0 flex-wrap">
+          <div className="flex gap-1.5">
+            {RANGES.map(r => (
+              <button
+                key={r.key}
+                onClick={() => handleRangeChange(r.key)}
+                className={`px-3 py-1 rounded-full text-[10px] font-medium tracking-wide transition-all ${
+                  activeRange === r.key
+                    ? 'bg-augusta/20 text-augusta-light'
+                    : 'bg-white/5 text-text-secondary/40 hover:bg-white/8 hover:text-text-secondary/60'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <div className="h-3 w-px bg-white/8" />
+          <div className="flex gap-1.5">
+            {Y_SCALES.map(s => (
+              <button
+                key={s.key}
+                onClick={() => { setYScaleKey(s.key); setViewBox(null); }}
+                className={`px-2.5 py-1 rounded-full text-[10px] font-medium tracking-wide transition-all ${
+                  yScaleKey === s.key
+                    ? 'bg-gold/15 text-gold/80'
+                    : 'bg-white/5 text-text-secondary/40 hover:bg-white/8 hover:text-text-secondary/60'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Chart area */}
@@ -541,7 +580,7 @@ export default function WinHistoryChart({ history, scoredEntries, onClose }) {
                   />
                   <text
                     x={PAD.left - 6} y={yPos + 3.5}
-                    fill="white" opacity="0.2" fontSize="9" textAnchor="end" fontFamily="monospace"
+                    fill="white" opacity="0.3" fontSize="10" textAnchor="end" fontFamily="monospace"
                   >
                     {v}%
                   </text>
@@ -553,8 +592,8 @@ export default function WinHistoryChart({ history, scoredEntries, onClose }) {
             {xLabels.map((t, i) => (
               <text
                 key={`x-${i}`}
-                x={xScale(t)} y={PAD.top + plotH + 16}
-                fill="white" opacity="0.18" fontSize="8" textAnchor="middle" fontFamily="monospace"
+                x={xScale(t)} y={PAD.top + plotH + 18}
+                fill="white" opacity="0.28" fontSize="9" textAnchor="middle" fontFamily="monospace"
               >
                 {formatTime(t)}
               </text>
@@ -609,10 +648,10 @@ export default function WinHistoryChart({ history, scoredEntries, onClose }) {
                     d={d}
                     fill="none"
                     stroke={entry.color}
-                    strokeWidth="2"
+                    strokeWidth="2.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    opacity="0.8"
+                    opacity="0.85"
                   />
                 );
               })}
@@ -626,9 +665,9 @@ export default function WinHistoryChart({ history, scoredEntries, onClose }) {
                     key={`dot-${entry.id}`}
                     cx={xScale(last.t)}
                     cy={yScale(last.pct)}
-                    r="3.5"
+                    r="4"
                     fill={entry.color}
-                    opacity="0.9"
+                    opacity="0.95"
                   />
                 );
               })}
@@ -651,20 +690,32 @@ export default function WinHistoryChart({ history, scoredEntries, onClose }) {
               // Only show inline label if there's room on the right
               if (lx > PAD.left + plotW - 10) {
                 // Label goes in the right margin
-                const name = entry.name.length > 10 ? entry.name.slice(0, 10) + '…' : entry.name;
+                const lastPct = entry.points[entry.points.length - 1]?.pct ?? 0;
+                const name = entry.name.length > 8 ? entry.name.slice(0, 8) + '..' : entry.name;
                 return (
-                  <text
-                    key={`label-${entry.id}`}
-                    x={PAD.left + plotW + 6}
-                    y={ly + 3}
-                    fill={entry.color}
-                    opacity="0.75"
-                    fontSize="8.5"
-                    fontWeight="500"
-                    fontFamily="system-ui, sans-serif"
-                  >
-                    {name}
-                  </text>
+                  <g key={`label-${entry.id}`}>
+                    <text
+                      x={PAD.left + plotW + 6}
+                      y={ly + 3}
+                      fill={entry.color}
+                      opacity="0.85"
+                      fontSize="9.5"
+                      fontWeight="600"
+                      fontFamily="system-ui, sans-serif"
+                    >
+                      {name}
+                    </text>
+                    <text
+                      x={PAD.left + plotW + 6}
+                      y={ly + 13}
+                      fill={entry.color}
+                      opacity="0.5"
+                      fontSize="8"
+                      fontFamily="monospace"
+                    >
+                      {lastPct.toFixed(1)}%
+                    </text>
+                  </g>
                 );
               }
               return null;
