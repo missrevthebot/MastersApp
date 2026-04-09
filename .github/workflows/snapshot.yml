@@ -2,9 +2,9 @@ name: Win% Snapshot
 
 on:
   schedule:
-    # Every 15 min, 12:00-00:00 UTC (8am-8pm ET), Apr 9-13
-    - cron: '*/15 12-23 9-13 4 *'
-    - cron: '*/15 0 10-14 4 *'  # midnight UTC = 8pm ET carry-over
+    # Every minute, 12:00-00:00 UTC (8am-8pm ET), Apr 9-13
+    - cron: '* 12-23 9-13 4 *'
+    - cron: '* 0 10-14 4 *'  # midnight UTC = 8pm ET carry-over
   workflow_dispatch: {} # manual trigger
 
 permissions:
