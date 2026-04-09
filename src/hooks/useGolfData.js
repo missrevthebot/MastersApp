@@ -33,7 +33,7 @@ function parseESPN(data) {
       const fullName = athlete.displayName || '';
       if (!fullName) continue;
 
-      const scoreStr = c.score?.displayValue || c.statistics?.[0]?.displayValue || 'E';
+      const scoreStr = (typeof c.score === 'string' ? c.score : c.score?.displayValue) || c.statistics?.[0]?.displayValue || 'E';
       let score = 0;
       if (scoreStr === 'E' || scoreStr === '-') {
         score = 0;
