@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-HISTORY_FILE="scripts/win-history.json"
+HISTORY_FILE="scripts/score-history.json"
 BACKFILL_FILE="src/data/backfillHistory.js"
 
 if [ ! -f "$HISTORY_FILE" ]; then
