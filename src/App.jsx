@@ -31,7 +31,7 @@ export default function App() {
 
   const { scored, mcPenalty } = scoreAndRank(entries, golferData);
   const { winProbabilities, simDetails } = calcWinProbabilities(scored, oddsData, golferData) || {};
-  const winHistory = useWinHistory(scored);
+  const winHistory = useWinHistory();
 
   return (
     <div className={`min-h-screen bg-bg ${lightMode ? 'light' : ''}`}>

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * snapshot.mjs — Fetch ESPN, compute best-4-of-6 entry scores.
- * Appends { t: timestamp, s: { e1: score, ... } } to score-history.json.
- * For backfill: reconstructs from hole-by-hole data using sortOrder for tee time estimates.
+ * Appends { t: Date.now(), s: { e1: score, ... } } to score-history.json.
+ * Real timestamps only — no backfill or tee-time estimation.
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -12,15 +12,6 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HISTORY_PATH = join(__dirname, 'score-history.json');
 const ESPN_URL = 'https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard';
-const PARS = [4,5,4,3,4,3,4,5,4,4,4,3,5,4,5,3,4,4];
-
-// Round start times (ET → UTC): 8am ET rounds 1-2, 10am ET rounds 3-4
-const ROUND_STARTS = [
-  new Date('2026-04-10T12:00:00Z').getTime(), // R1
-  new Date('2026-04-11T12:00:00Z').getTime(), // R2
-  new Date('2026-04-12T14:00:00Z').getTime(), // R3
-  new Date('2026-04-13T14:00:00Z').getTime(), // R4
-];
 
 const ENTRIES = [
   { id: 'e1', picks: ['Jon Rahm', 'Ludvig Aberg', 'Patrick Reed', 'J.J. Spaun', 'Gary Woodland', 'Max Greyserman'] },
@@ -67,8 +58,7 @@ function parseESPN(data) {
   const event = data?.events?.[0];
   if (!event) return golfers;
   const competitors = event.competitions?.[0]?.competitors || [];
-  for (let ci = 0; ci < competitors.length; ci++) {
-    const c = competitors[ci];
+  for (const c of competitors) {
     const name = c.athlete?.displayName || '';
     if (!name) continue;
     const scoreStr = (typeof c.score === 'string' ? c.score : c.score?.displayValue) || 'E';
@@ -78,13 +68,7 @@ function parseESPN(data) {
     const ps = c.status?.type?.name || '';
     if (ps === 'cut' || ps === 'CUT') status = 'cut';
     else if (ps === 'wd' || ps === 'WD') status = 'wd';
-    const rounds = [];
-    for (const rs of (c.linescores || [])) {
-      const holes = (rs?.linescores || []).map(h => ({ hole: h.period, strokes: h.value }));
-      if (holes.length > 0) rounds.push({ round: rs.period || rounds.length + 1, holes });
-    }
-    // Use array index as proxy for tee time order (ESPN returns competitors roughly in tee time order)
-    golfers[name] = { score, status, rounds, order: ci };
+    golfers[name] = { score, status };
   }
   return golfers;
 }
@@ -98,104 +82,23 @@ function calcMcPenalty(golferData) {
   return has ? worst + 1 : 15;
 }
 
-/**
- * Build chronological event stream from hole-by-hole data.
- * Each golfer's holes get timestamps based on their estimated tee time.
- * ~30 groups, ~11 min gap, ~15 min per hole.
- */
-function buildBackfill(golferData) {
-  const TEE_GAP = 11 * 60 * 1000;   // 11 min between groups
-  const HOLE_PACE = 15 * 60 * 1000; // 15 min per hole
-
-  // Build per-golfer hole events with estimated timestamps
-  const events = []; // { t, golferName, cumScore }
-  const golferCum = {}; // name -> running cumulative score
-
-  for (const [name, data] of Object.entries(golferData)) {
-    if (!name.includes(' ') || !data.rounds?.length) continue;
-    const groupIdx = Math.floor((data.order || 0) / 3);
-    let cum = 0;
-
-    for (const round of data.rounds) {
-      const roundIdx = round.round - 1;
-      const roundStart = ROUND_STARTS[roundIdx] || ROUND_STARTS[0];
-      const teeTime = roundStart + groupIdx * TEE_GAP;
-
-      for (const hole of round.holes) {
-        const par = PARS[(hole.hole - 1) % 18] || 4;
-        cum += (hole.strokes - par);
-        const finishTime = teeTime + hole.hole * HOLE_PACE;
-        events.push({ t: finishTime, name, cumScore: cum });
-      }
-    }
-    golferCum[name] = 0; // init
-  }
-
-  events.sort((a, b) => a.t - b.t);
-  if (events.length === 0) return [];
-
-  // Walk events, snapshot every 5 min of active play
-  const SNAP_INTERVAL = 5 * 60 * 1000;
-  const runningScores = {}; // golferName -> cumScore
-  const snapshots = [];
-
-  // Seed at first event time
-  let nextSnap = events[0].t;
-
-  function takeSnapshot(t) {
-    const snap = { t: Math.round(t), s: {} };
-    for (const entry of ENTRIES) {
-      const scores = entry.picks.map(p => {
-        const m = matchGolfer(p, golferData);
-        if (!m) return 0;
-        return runningScores[m.name] ?? 0;
-      }).sort((a, b) => a - b);
-      snap.s[entry.id] = scores.slice(0, 4).reduce((s, v) => s + v, 0);
-    }
-    snapshots.push(snap);
-  }
-
-  // Opening snapshot: all zeros
-  takeSnapshot(events[0].t - 1000);
-
-  for (const ev of events) {
-    // Emit snapshots at intervals up to this event
-    while (nextSnap <= ev.t) {
-      takeSnapshot(nextSnap);
-      nextSnap += SNAP_INTERVAL;
-    }
-    runningScores[ev.name] = ev.cumScore;
-  }
-
-  // Final snapshot after all events
-  takeSnapshot(events[events.length - 1].t + 1000);
-
-  return snapshots;
-}
-
 async function main() {
-  log(`Starting at ${new Date().toISOString()}`);
   let golferData = {};
   try {
     const res = await fetch(ESPN_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     golferData = parseESPN(await res.json());
-    log(`ESPN: ${Object.keys(golferData).filter(k => k.includes(' ')).length} golfers`);
+    const count = Object.keys(golferData).filter(k => k.includes(' ')).length;
+    if (count === 0) { log('No golfers found'); return; }
   } catch (err) { log(`ESPN failed: ${err.message}`); return; }
 
-  // Load or backfill
+  // Load existing history
   let history = [];
   if (existsSync(HISTORY_PATH)) {
     try { history = JSON.parse(readFileSync(HISTORY_PATH, 'utf-8')); } catch {}
   }
 
-  if (history.length === 0) {
-    log('Backfilling from hole-by-hole data...');
-    history = buildBackfill(golferData);
-    log(`Backfilled ${history.length} snapshots`);
-  }
-
-  // Current snapshot
+  // Compute current scores
   const mcPenalty = calcMcPenalty(golferData);
   const snap = { t: Date.now(), s: {} };
   for (const entry of ENTRIES) {
@@ -212,12 +115,11 @@ async function main() {
   const changed = !last || Object.keys(snap.s).some(id => snap.s[id] !== last.s[id]);
   if (changed) {
     history.push(snap);
+    writeFileSync(HISTORY_PATH, JSON.stringify(history));
   }
 
   const sorted = ENTRIES.map(e => ({ id: e.id, s: snap.s[e.id] })).sort((a, b) => a.s - b.s);
-  log(`Leader: ${sorted[0].id} (${sorted[0].s >= 0 ? '+' : ''}${sorted[0].s}), ${history.length} total snapshots`);
-
-  writeFileSync(HISTORY_PATH, JSON.stringify(history));
+  log(`${sorted[0].id} leads (${sorted[0].s >= 0 ? '+' : ''}${sorted[0].s}), ${history.length} snaps`);
 }
 
 main().catch(e => { log(`Fatal: ${e.message}`); process.exit(1); });
