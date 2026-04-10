@@ -2,13 +2,11 @@ import { useState } from 'react';
 import { useGolfData } from './hooks/useGolfData';
 import { useEntries } from './hooks/useEntries';
 import { useOdds } from './hooks/useOdds';
-import { useWinHistory } from './hooks/useWinHistory';
 import { scoreAndRank, calcWinProbabilities } from './scoring';
 import Header from './components/Header';
 import Leaderboard from './components/Leaderboard';
 import TournamentLeaderboard from './components/TournamentLeaderboard';
 import GolferDetail from './components/GolferDetail';
-import WinHistoryChart from './components/WinHistoryChart';
 import Admin from './components/Admin';
 
 export default function App() {
@@ -19,7 +17,6 @@ export default function App() {
   const [tab, setTab] = useState('pool');
   const [lightMode, setLightMode] = useState(() => localStorage.getItem('masters-light-mode') === 'true');
   const [selectedGolfer, setSelectedGolfer] = useState(null);
-  const [showTrends, setShowTrends] = useState(false);
 
   function toggleLight() {
     setLightMode(prev => {
@@ -31,7 +28,6 @@ export default function App() {
 
   const { scored, mcPenalty } = scoreAndRank(entries, golferData);
   const { winProbabilities, simDetails } = calcWinProbabilities(scored, oddsData, golferData) || {};
-  const winHistory = useWinHistory();
 
   return (
     <div className={`min-h-screen bg-bg ${lightMode ? 'light' : ''}`}>
@@ -61,12 +57,6 @@ export default function App() {
               {t === 'pool' ? 'Pool' : 'Tournament'}
             </button>
           ))}
-          <button
-            onClick={() => setShowTrends(true)}
-            className="text-[11px] tracking-[0.1em] uppercase py-2 transition-all border-b-[1.5px] text-text-secondary/30 border-transparent hover:text-text-secondary/60"
-          >
-            Trends
-          </button>
         </div>
       </div>
 
@@ -98,15 +88,6 @@ export default function App() {
           Pick 6 &middot; Best 4 &middot; Winner Take All
         </p>
       </footer>
-
-      {/* Win% trends chart */}
-      {showTrends && (
-        <WinHistoryChart
-          history={winHistory}
-          scoredEntries={scored}
-          onClose={() => setShowTrends(false)}
-        />
-      )}
 
       {/* Golfer detail sheet */}
       {selectedGolfer && (
