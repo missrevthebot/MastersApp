@@ -107,9 +107,9 @@ function EntryCard({ entry, expanded, onToggle, isLeader, oddsData, winProb, ran
   }
 
   const hasOdds = Object.keys(oddsData || {}).length > 0;
-  const isElim = winProb === 0 && hasOdds; // truly 0 sims won
-  const isSubOne = winProb === -1; // has wins but rounds to 0%
-  const expectedPayout = hasOdds && (winProb > 0 || isSubOne) ? ((Math.max(winProb, 0.5) / 100) * pot).toFixed(0) : null;
+  const isElim = winProb === 0 && hasOdds;
+  const isSubOne = winProb > 0 && winProb < 1;
+  const expectedPayout = hasOdds && winProb > 0 ? ((winProb / 100) * pot).toFixed(0) : null;
 
   return (
     <div
@@ -161,7 +161,7 @@ function EntryCard({ entry, expanded, onToggle, isLeader, oddsData, winProb, ran
                 onClick={(e) => { e.stopPropagation(); onSimClick?.(); }}
                 title="View simulation breakdown"
               >
-                {isElim ? 'ELIM' : isSubOne ? '<1%' : `${winProb}%`}
+                {isElim ? 'ELIM' : `${winProb}%`}
                 {expectedPayout && parseInt(expectedPayout) > 0 && (
                   <span className="text-gold-dim/40">${expectedPayout}</span>
                 )}
@@ -359,7 +359,7 @@ export default function Leaderboard({ scoredEntries, mcPenalty, oddsData, winPro
 
   // Elimination counter
   const aliveCount = hasWinProbs
-    ? Object.values(winProbabilities).filter(p => p > 0 || p === -1).length
+    ? Object.values(winProbabilities).filter(p => p > 0).length
     : scoredEntries.length;
   const elimCount = scoredEntries.length - aliveCount;
 
@@ -373,9 +373,7 @@ export default function Leaderboard({ scoredEntries, mcPenalty, oddsData, winPro
 
   const sorted = [...scoredEntries];
   if (sortBy === 'win' && hasWinProbs) {
-    // -1 means <1% (still alive), sort above 0 (eliminated)
-    const winVal = (id) => { const v = winProbabilities[id] || 0; return v === -1 ? 0.01 : v; };
-    sorted.sort((a, b) => winVal(b.id) - winVal(a.id));
+    sorted.sort((a, b) => (winProbabilities[b.id] || 0) - (winProbabilities[a.id] || 0));
   }
 
   return (
