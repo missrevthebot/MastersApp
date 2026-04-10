@@ -439,7 +439,7 @@ export function calcWinProbabilities(scoredEntries, oddsData, golferData, numSim
     });
 
     details[id] = {
-      winPct,
+      winPct: result[id],
       median: parseFloat(median.toFixed(1)),
       bestCase: parseFloat(bestCase.toFixed(1)),
       worstCase: parseFloat(worstCase.toFixed(1)),
