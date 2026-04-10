@@ -382,8 +382,10 @@ export function calcWinProbabilities(scoredEntries, oddsData, golferData, numSim
 
   for (let e = 0; e < n; e++) {
     const id = entryIds[e];
-    const winPct = parseFloat(((wins[e] / numSims) * 100).toFixed(1));
-    result[id] = winPct;
+    const rawWins = wins[e];
+    const winPct = parseFloat(((rawWins / numSims) * 100).toFixed(1));
+    // Use -1 to signal "<1%" (has wins but rounds to 0), 0 for true elimination
+    result[id] = rawWins > 0 && winPct === 0 ? -1 : winPct;
 
     const offset = e * numSims;
     for (let i = 0; i < numSims; i++) sortBuf[i] = allTotals[offset + i];

@@ -107,8 +107,9 @@ function EntryCard({ entry, expanded, onToggle, isLeader, oddsData, winProb, ran
   }
 
   const hasOdds = Object.keys(oddsData || {}).length > 0;
-  const isElim = winProb === 0 && hasOdds;
-  const expectedPayout = hasOdds && winProb > 0 ? ((winProb / 100) * pot).toFixed(0) : null;
+  const isElim = winProb === 0 && hasOdds; // truly 0 sims won
+  const isSubOne = winProb === -1; // has wins but rounds to 0%
+  const expectedPayout = hasOdds && (winProb > 0 || isSubOne) ? ((Math.max(winProb, 0.5) / 100) * pot).toFixed(0) : null;
 
   return (
     <div
@@ -152,6 +153,7 @@ function EntryCard({ entry, expanded, onToggle, isLeader, oddsData, winProb, ran
               <span
                 className={`text-[9px] font-mono px-1.5 py-0.5 rounded-md flex-shrink-0 cursor-pointer hover:ring-1 hover:ring-gold/20 transition-all flex items-center gap-1.5
                   ${isElim ? 'text-mc-red/50' :
+                    isSubOne ? 'text-text-secondary/30' :
                     winProb >= 20 ? 'bg-gold/10 text-gold/90' :
                     winProb >= 8 ? 'bg-augusta/10 text-active-blue/80' :
                     'text-text-secondary/40'}
@@ -159,7 +161,7 @@ function EntryCard({ entry, expanded, onToggle, isLeader, oddsData, winProb, ran
                 onClick={(e) => { e.stopPropagation(); onSimClick?.(); }}
                 title="View simulation breakdown"
               >
-                {isElim ? 'ELIM' : `${winProb}%`}
+                {isElim ? 'ELIM' : isSubOne ? '<1%' : `${winProb}%`}
                 {expectedPayout && parseInt(expectedPayout) > 0 && (
                   <span className="text-gold-dim/40">${expectedPayout}</span>
                 )}
@@ -267,7 +269,7 @@ function ModelExplainer({ onClose }) {
             <span className="text-gold/60 text-[10px] font-mono mt-px flex-shrink-0 w-3 text-right">4</span>
             <p>
               <span className="text-text-primary/80">Win % = your share of first-place finishes.</span> Flat
-              early, sharp by Sunday. Entries reaching 0% are mathematically eliminated.
+              early, sharp by Sunday. ELIM = mathematically eliminated (zero winning sims).
             </p>
           </div>
         </div>
@@ -357,7 +359,7 @@ export default function Leaderboard({ scoredEntries, mcPenalty, oddsData, winPro
 
   // Elimination counter
   const aliveCount = hasWinProbs
-    ? Object.values(winProbabilities).filter(p => p > 0).length
+    ? Object.values(winProbabilities).filter(p => p > 0 || p === -1).length
     : scoredEntries.length;
   const elimCount = scoredEntries.length - aliveCount;
 
@@ -371,7 +373,9 @@ export default function Leaderboard({ scoredEntries, mcPenalty, oddsData, winPro
 
   const sorted = [...scoredEntries];
   if (sortBy === 'win' && hasWinProbs) {
-    sorted.sort((a, b) => (winProbabilities[b.id] || 0) - (winProbabilities[a.id] || 0));
+    // -1 means <1% (still alive), sort above 0 (eliminated)
+    const winVal = (id) => { const v = winProbabilities[id] || 0; return v === -1 ? 0.01 : v; };
+    sorted.sort((a, b) => winVal(b.id) - winVal(a.id));
   }
 
   return (
