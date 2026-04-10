@@ -66,15 +66,11 @@ function parseESPN(data) {
       const tournamentRound = competition?.status?.period || 1;
       const currentRound = c.status?.period || activeRound?.period || '';
 
-      // Between rounds: player finished last round but hasn't started new one
-      // Only show — if there are players currently on the course (round is active)
+      // Between rounds: player finished last round but tournament has moved on
+      // Show — if the tournament round is ahead of the player's last completed round
+      // (cut/wd players keep F — handled by status check above)
       const playerRound = parseInt(currentRound, 10) || (activeRound?.period || 1);
-      const roundInProgress = competitors.some(other => {
-        const otherThru = other.status?.displayValue || '';
-        const otherRound = other.status?.period || 0;
-        return otherRound === tournamentRound && otherThru && otherThru !== 'F' && otherThru !== '' && parseInt(otherThru, 10) > 0;
-      });
-      if (thru === 'F' && playerRound < tournamentRound && roundInProgress) {
+      if (thru === 'F' && playerRound < tournamentRound && status === 'active') {
         thru = '—';
       }
 
