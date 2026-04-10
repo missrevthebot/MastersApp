@@ -8,12 +8,16 @@ const COLORS = [
   '#c084fc', '#22d3ee',
 ];
 
-const ROUND_WINDOWS = [
-  { label: 'R1', start: new Date('2026-04-10T12:00:00Z').getTime(), end: new Date('2026-04-10T23:30:00Z').getTime() },
-  { label: 'R2', start: new Date('2026-04-11T12:00:00Z').getTime(), end: new Date('2026-04-11T23:30:00Z').getTime() },
-  { label: 'R3', start: new Date('2026-04-12T14:00:00Z').getTime(), end: new Date('2026-04-13T01:30:00Z').getTime() },
-  { label: 'R4', start: new Date('2026-04-13T14:00:00Z').getTime(), end: new Date('2026-04-14T01:30:00Z').getTime() },
+// Round start times for labeling
+const ROUND_STARTS = [
+  { label: 'R1', t: new Date('2026-04-10T12:00:00Z').getTime() },
+  { label: 'R2', t: new Date('2026-04-11T12:00:00Z').getTime() },
+  { label: 'R3', t: new Date('2026-04-12T14:00:00Z').getTime() },
+  { label: 'R4', t: new Date('2026-04-13T14:00:00Z').getTime() },
 ];
+
+// Any gap > 30 min in the data is compressed
+const GAP_THRESHOLD = 30 * 60 * 1000;
 
 const RANGES = [
   { key: 'all', label: 'All' },
@@ -41,76 +45,68 @@ function formatDate(ts) {
 function clamp(val, min, max) { return Math.min(max, Math.max(min, val)); }
 
 /**
- * Build a compressed timeline that removes dead gaps between rounds.
+ * Build a compressed timeline by detecting gaps > GAP_THRESHOLD in actual data.
+ * Removes dead space between rounds automatically.
  * Returns { toCompressed(t), toReal(c), segments, totalDuration }
- * Each segment = { start, end, label, cStart, cEnd } where c* are compressed coords.
  */
 function buildCompressedTimeline(history) {
   if (!history.length) return null;
-  const tMin = history[0].t;
-  const tMax = history[history.length - 1].t;
 
-  // Find which round windows overlap with our data
-  const activeSegments = [];
-  for (const rw of ROUND_WINDOWS) {
-    const segStart = Math.max(rw.start, tMin);
-    const segEnd = Math.min(rw.end, tMax);
-    if (segStart < segEnd) {
-      activeSegments.push({ start: segStart, end: segEnd, label: rw.label });
+  // Find continuous segments by detecting gaps
+  const segments = [];
+  let segStart = history[0].t;
+  let prevT = history[0].t;
+
+  for (let i = 1; i < history.length; i++) {
+    const gap = history[i].t - prevT;
+    if (gap > GAP_THRESHOLD) {
+      segments.push({ start: segStart, end: prevT });
+      segStart = history[i].t;
+    }
+    prevT = history[i].t;
+  }
+  segments.push({ start: segStart, end: prevT });
+
+  // Label each segment with nearest round
+  for (const seg of segments) {
+    seg.label = '';
+    for (const rs of ROUND_STARTS) {
+      if (rs.t >= seg.start - 60*60*1000 && rs.t <= seg.end) {
+        seg.label = rs.label;
+        break;
+      }
     }
   }
 
-  // If no segments match (data outside round windows), treat as one continuous block
-  if (activeSegments.length === 0) {
-    const seg = { start: tMin, end: tMax, label: '', cStart: 0, cEnd: tMax - tMin };
-    return {
-      segments: [seg],
-      totalDuration: tMax - tMin,
-      toCompressed: (t) => clamp(t - tMin, 0, tMax - tMin),
-      toReal: (c) => tMin + c,
-    };
-  }
-
-  // Assign compressed coordinates (no gaps between segments)
+  // Assign compressed coordinates
   let cumulative = 0;
-  for (const seg of activeSegments) {
+  for (const seg of segments) {
     seg.cStart = cumulative;
     seg.cEnd = cumulative + (seg.end - seg.start);
     cumulative = seg.cEnd;
   }
-  const totalDuration = cumulative;
+  const totalDuration = cumulative || 1;
 
   function toCompressed(t) {
-    // Before first segment
-    if (t <= activeSegments[0].start) return activeSegments[0].cStart;
-    // After last segment
-    const last = activeSegments[activeSegments.length - 1];
+    if (t <= segments[0].start) return segments[0].cStart;
+    const last = segments[segments.length - 1];
     if (t >= last.end) return last.cEnd;
-    // Find which segment (or gap)
-    for (let i = 0; i < activeSegments.length; i++) {
-      const seg = activeSegments[i];
-      if (t >= seg.start && t <= seg.end) {
-        return seg.cStart + (t - seg.start);
-      }
-      // In gap between this segment and next
-      if (i < activeSegments.length - 1 && t > seg.end && t < activeSegments[i + 1].start) {
-        return seg.cEnd; // snap to end of previous segment
-      }
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (t >= seg.start && t <= seg.end) return seg.cStart + (t - seg.start);
+      if (i < segments.length - 1 && t > seg.end && t < segments[i + 1].start) return seg.cEnd;
     }
     return last.cEnd;
   }
 
   function toReal(c) {
-    for (const seg of activeSegments) {
-      if (c >= seg.cStart && c <= seg.cEnd) {
-        return seg.start + (c - seg.cStart);
-      }
+    for (const seg of segments) {
+      if (c >= seg.cStart && c <= seg.cEnd) return seg.start + (c - seg.cStart);
     }
-    const last = activeSegments[activeSegments.length - 1];
-    return last.end;
+    return segments[segments.length - 1].end;
   }
 
-  return { segments: activeSegments, totalDuration, toCompressed, toReal };
+  return { segments, totalDuration, toCompressed, toReal };
 }
 
 function smoothPath(points, xFn, yFn) {

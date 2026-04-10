@@ -1,5 +1,7 @@
 #!/bin/bash
-# deploy-history.sh — Read win-history.json, regenerate backfillHistory.js, build & deploy.
+# deploy-history.sh — Run snapshot, regenerate backfillHistory.js, commit & push.
+# Run manually each evening at ~8pm CST to hardcode the day's scores.
+# Vercel auto-deploys on push to main.
 set -e
 cd "$(dirname "$0")/.."
 
@@ -28,18 +30,10 @@ fs.writeFileSync('$BACKFILL_FILE', out);
 "
 echo "Wrote $BACKFILL_FILE"
 
-echo "Building..."
-npm run build
+echo "Committing and pushing (Vercel auto-deploys on push)..."
+git add scripts/score-history.json src/data/backfillHistory.js
+git diff --cached --quiet && echo "No changes to commit" && exit 0
+git commit -m "chore: end-of-day score snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+git push origin main
 
-echo "Deploying to Vercel..."
-npx vercel --prod --yes 2>&1 | tee /tmp/vercel-deploy.log
-
-DEPLOY_URL=$(grep -oE 'https://[^ ]+\.vercel\.app' /tmp/vercel-deploy.log | tail -1)
-echo "Deploy URL: $DEPLOY_URL"
-
-if [ -n "$DEPLOY_URL" ]; then
-  echo "Setting alias to masters-app-rosy.vercel.app..."
-  npx vercel alias "$DEPLOY_URL" masters-app-rosy.vercel.app 2>&1
-fi
-
-echo "Done! Live at: https://masters-app-rosy.vercel.app"
+echo "Done! Vercel will auto-deploy."
