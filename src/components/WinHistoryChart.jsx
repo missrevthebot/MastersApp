@@ -139,7 +139,7 @@ function smoothPath(points, xFn, yFn) {
 
 export default function WinHistoryChart({ history, scoredEntries, onClose }) {
   const [hiddenEntries, setHiddenEntries] = useState(() => new Set());
-  const [activeRange, setActiveRange] = useState('3h');
+  const [activeRange, setActiveRange] = useState('all');
   const [viewBox, setViewBox] = useState(null);
   const svgRef = useRef(null);
   const gestureRef = useRef({ isPanning: false, startX: 0, startViewBox: null, pinchStartDist: 0, pinchStartViewBox: null, lastTap: 0 });
