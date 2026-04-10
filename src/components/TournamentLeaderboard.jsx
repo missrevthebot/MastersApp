@@ -117,7 +117,7 @@ export default function TournamentLeaderboard({ golferData, oddsData, entries, o
             const odds = matchOdds(g.name, oddsData);
             const isCut = g.status === 'cut';
             const isWd = g.status === 'wd';
-            const isLive = g.status === 'active' && g.thru && !g.thru.includes('F');
+            const isLive = g.status === 'active' && g.thru && g.thru !== 'F' && g.thru !== '—';
 
             return (
               <div key={g.name}

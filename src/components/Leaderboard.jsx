@@ -32,7 +32,7 @@ function GolferRow({ golfer, isDropped, oddsData, onGolferClick, golferData }) {
   const odds = matchOdds(golfer.name, oddsData);
   const isCut = golfer.status === 'cut';
   const isWd = golfer.status === 'wd';
-  const isLive = golfer.status === 'active' && golfer.thru && !golfer.thru.includes('F');
+  const isLive = golfer.status === 'active' && golfer.thru && golfer.thru !== 'F' && golfer.thru !== '—';
   const momentum = !isDropped && golfer.status === 'active' ? getMomentum(golfer, golferData) : null;
 
   return (

@@ -63,7 +63,14 @@ function parseESPN(data) {
         thru = holesPlayed >= 18 ? 'F' : `${holesPlayed}`;
       }
       const position = c.status?.position?.displayName || c.sortOrder?.toString() || '';
+      const tournamentRound = competition?.status?.period || 1;
       const currentRound = c.status?.period || activeRound?.period || '';
+
+      // Between rounds: player finished last round but hasn't started new one
+      const playerRound = parseInt(currentRound, 10) || (activeRound?.period || 1);
+      if (thru === 'F' && playerRound < tournamentRound) {
+        thru = '—';
+      }
 
       // Parse round-by-round hole scores
       const rounds = [];
