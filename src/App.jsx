@@ -27,7 +27,24 @@ export default function App() {
   }
 
   const { scored, mcPenalty } = scoreAndRank(entries, golferData);
-  const { winProbabilities, simDetails } = calcWinProbabilities(scored, oddsData, golferData) || {};
+  const isComplete = tournamentInfo?.isComplete;
+
+  // When tournament is complete: winner gets 100%, everyone else 0%
+  let winProbabilities, simDetails;
+  if (isComplete && scored.length > 0 && scored[0].best4Total !== null) {
+    winProbabilities = {};
+    simDetails = {};
+    scored.forEach(e => { winProbabilities[e.id] = e.id === scored[0].id ? 100 : 0; });
+  } else {
+    const sim = calcWinProbabilities(scored, oddsData, golferData) || {};
+    winProbabilities = sim.winProbabilities;
+    simDetails = sim.simDetails;
+  }
+
+  // Find Masters champion (lowest score active golfer)
+  const mastersChampion = Object.entries(golferData)
+    .filter(([name, d]) => name.includes(' ') && d.status === 'active')
+    .sort((a, b) => a[1].score - b[1].score)[0];
 
   return (
     <div className={`min-h-screen bg-bg ${lightMode ? 'light' : ''}`}>
@@ -41,12 +58,23 @@ export default function App() {
         onToggleLight={toggleLight}
       />
 
-      {scored.length > 0 && scored[0].best4Total !== null && (
-        <div className="max-w-lg mx-auto px-5 pt-4 text-center">
+      {isComplete && scored.length > 0 && scored[0].best4Total !== null && (
+        <div className="max-w-lg mx-auto px-5 pt-4 text-center space-y-3">
+          {mastersChampion && (
+            <div className="bg-augusta/8 border border-augusta/15 rounded-xl px-4 py-3">
+              <p className="text-[10px] text-text-secondary/40 tracking-[0.15em] uppercase">2026 Masters Champion</p>
+              <p className="font-[Playfair_Display] text-augusta-light text-lg mt-1">{mastersChampion[0]}</p>
+              <p className="text-[11px] text-text-secondary/50 font-mono mt-0.5">
+                {mastersChampion[1].score < 0 ? mastersChampion[1].score : mastersChampion[1].score === 0 ? 'E' : `+${mastersChampion[1].score}`}
+              </p>
+            </div>
+          )}
           <div className="bg-gold/10 border border-gold/20 rounded-xl px-4 py-3">
-            <p className="text-[10px] text-text-secondary/40 tracking-[0.15em] uppercase">2026 Masters Complete</p>
+            <p className="text-[10px] text-text-secondary/40 tracking-[0.15em] uppercase">Pool Winner</p>
             <p className="font-[Playfair_Display] text-gold text-lg mt-1">{scored[0].name}</p>
-            <p className="text-[11px] text-text-secondary/50 font-mono mt-0.5">{scored[0].best4Total >= 0 ? '+' : ''}{scored[0].best4Total} · Winner Take All</p>
+            <p className="text-[11px] text-text-secondary/50 font-mono mt-0.5">
+              {scored[0].best4Total < 0 ? scored[0].best4Total : scored[0].best4Total === 0 ? 'E' : `+${scored[0].best4Total}`} · ${scored.length * 10}
+            </p>
           </div>
         </div>
       )}
