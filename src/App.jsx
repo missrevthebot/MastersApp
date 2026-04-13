@@ -41,6 +41,16 @@ export default function App() {
         onToggleLight={toggleLight}
       />
 
+      {scored.length > 0 && scored[0].best4Total !== null && (
+        <div className="max-w-lg mx-auto px-5 pt-4 text-center">
+          <div className="bg-gold/10 border border-gold/20 rounded-xl px-4 py-3">
+            <p className="text-[10px] text-text-secondary/40 tracking-[0.15em] uppercase">2026 Masters Complete</p>
+            <p className="font-[Playfair_Display] text-gold text-lg mt-1">{scored[0].name}</p>
+            <p className="text-[11px] text-text-secondary/50 font-mono mt-0.5">{scored[0].best4Total >= 0 ? '+' : ''}{scored[0].best4Total} · Winner Take All</p>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="max-w-lg mx-auto px-5 pt-3">
         <div className="flex gap-6 justify-center">
